@@ -9,7 +9,7 @@ library(readr)
 library(ggplot2)
 library(dplyr)
 
-chicago_community_choropleth_data <- read_csv("new_construction_choropleth/choropleth.csv")
+chicago_community_choropleth_data <- read_csv("https://raw.githubusercontent.com/jack-s5/r-practice-projects/main/new_construction_choropleth/choropleth.csv")
 
 plot <- ggplot() +  
         geom_polygon(
