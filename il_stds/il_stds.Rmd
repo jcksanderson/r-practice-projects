@@ -1,0 +1,84 @@
+---
+title: "plotly_practice"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r mapping trials}
+library(ggplot2)
+library(maps)
+library(readr)
+library(dplyr)
+
+# Generates county map data
+il_county <- map_data("county", "illinois")
+
+# county population data
+county_pop <-  read_csv("il_stds/county_pop.csv") %>% 
+  select("pop2010", "pop2022", "name")
+county_pop$name <- sub(" County", "", county_pop$name)
+county_pop <- county_pop %>% 
+  mutate(population = (pop2010+pop2022)/2) %>% 
+  select("name", "population") %>% 
+  mutate(name = tolower(name))
+county_pop <- rename(county_pop, subregion = name)
+county_pop$subregion <- sub("dupage", "du page", county_pop$subregion)
+county_pop$subregion <- sub("st. clair", "st clair", county_pop$subregion)
+county_pop$subregion <- sub("dupage", "du page", county_pop$subregion)
+county_pop$subregion <- sub("lasalle", "la salle", county_pop$subregion)
+county_pop$subregion <- sub("dekalb", "de kalb", county_pop$subregion)
+
+
+# reads in stds data, tidies up
+stds <- read_csv("il_stds/stds.csv") %>% 
+  select("county_jurisdiction", "female_total_count", "male_total_count") %>% 
+  mutate(total_count = female_total_count + male_total_count)
+
+# for some reason it repeated, so only selects the first "repeat"
+stds <- stds[1:104, ]
+# gets rid of "Cook Chicago" and "Cook Suburban Cook" rows
+stds <- filter(stds, !row_number() %in% c(17, 18)) %>% 
+  select("county_jurisdiction", "total_count") %>% 
+  rename(subregion = county_jurisdiction) %>% 
+  mutate(subregion = tolower(subregion))
+stds$subregion <- sub("dupage", "du page", stds$subregion)
+
+
+
+
+# combines dataframes
+combined <- left_join(county_pop, stds, by = "subregion")
+combined2 <- left_join(il_county, combined, by = "subregion")
+
+
+map1 <- ggplot(combined2, aes(x = long, y = lat, group = group)) +
+        geom_polygon(aes(fill = (total_count/population)), color = "black") + 
+        labs(title = "Illinois Gonorrhea Cases per Capita, 2000-2016", 
+             fill = "Cases per Capita",
+             subtitle = "Based on data from the Illinois Department of Public Health") +
+        theme(plot.title = element_text(size = 15, family = "Lato"),
+              plot.subtitle = element_text(size = 12, family = "Lato"),
+              legend.title = element_text(size = 12, family = "Lato"),
+              axis.title = element_blank(),
+              axis.text = element_blank(),
+              axis.ticks = element_blank(),
+              panel.grid = element_blank(),
+              rect = element_blank()) +
+        guides(fill = guide_colorsteps()) +
+        coord_fixed(ratio = 1.2)
+map1
+
+universities <- c("UIUC", "NIU", "WIU", "SIU", "Milikin", "Bradley", "ISU", "UIS") 
+lat <- c(40.102412153634496, 41.935247527998975, 40.476761679254466, 37.710036360545274, 39.84541595553977, 40.697868489696546, 40.51231517510948, 39.73049252390238)
+long <- c(-88.2271131947673, -88.77342577380553, -90.68428480084272, -89.22313189764078, -88.97465717201452, -89.61478938420359, -88.99476381745819, -89.61781057757449)
+
+unis <- data.frame(universities, lat, long)
+map2 <- map1 + 
+        geom_point(data = unis, aes(x = long, y = lat, color = "pink"), inherit.aes = FALSE) +
+        scale_color_discrete(name = "", labels = c("Universities"))
+map2
+
+```
