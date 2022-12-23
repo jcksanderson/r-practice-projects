@@ -1,0 +1,58 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+```{r chicago_choropleth}
+library(readr)
+library(ggplot2)
+library(broom)
+library(geojsonio)
+library(dplyr)
+
+chicago_community_choropleth_data <- read_csv("new_construction_choropleth/choropleth.csv")
+
+plot <- ggplot() +  
+        geom_polygon(
+          data = chicago_community_choropleth_data,
+          aes(fill = total, x = long, y = lat, group = group),
+          color = "black"
+        ) +
+        theme_void() +
+        coord_map() +  
+        labs(    
+          title = "New Construction Permits per Community Area",
+          subtitle = "(2018-2022)"
+        ) +
+        scale_fill_viridis_b(
+          trans = "log", 
+          breaks = c(25, 50, 100, 250, 500), 
+          name = "Permits Issued"
+        ) +
+        theme(
+          plot.title = element_text(size = 25, 
+                                    color = "white", 
+                                    family = "Lato", 
+                                    face = "bold", 
+                                    hjust = 0.5),    
+          plot.subtitle = element_text(size = 15, 
+                                       color = "gray70", 
+                                       family = "Lato", 
+                                       face = "italic", 
+                                       hjust = 0.5),    
+          legend.title = element_text(color = "white", 
+                                      family = "Lato", 
+                                      face = "bold"),    
+          legend.text = element_text(color = "white", 
+                                     family = "Lato"),    
+          plot.margin = margin(10, 10, 10, 0),
+          legend.position = c(0.25, 0.5),
+          plot.background = element_rect(fill = "gray10", color = NA)
+        )
+# Below sets the background to be completely gray; otherwise it isn't.
+grid::grid.newpage()
+grid::grid.draw(grid::rectGrob(gp = grid::gpar(fill = "gray10")))
+print(plot, newpage = FALSE)
+```
+
