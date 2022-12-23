@@ -54,4 +54,4 @@ grid::grid.newpage()
 grid::grid.draw(grid::rectGrob(gp = grid::gpar(fill = "gray10")))
 print(plot, newpage = FALSE)
 ```
-
+Hi!
