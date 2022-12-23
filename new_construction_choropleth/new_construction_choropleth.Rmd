@@ -1,13 +1,12 @@
 ---
 title: "R Notebook"
 output: github_document
-
+editor_options: 
+  chunk_output_type: inline
 ---
-```{r chicago_choropleth}
+```{r chicago_choropleth, warning = FALSE}
 library(readr)
 library(ggplot2)
-library(broom)
-library(geojsonio)
 library(dplyr)
 
 chicago_community_choropleth_data <- read_csv("new_construction_choropleth/choropleth.csv")
@@ -30,7 +29,7 @@ plot <- ggplot() +
           name = "Permits Issued"
         ) +
         theme(
-          plot.title = element_text(size = 25, 
+          plot.title = element_text(size = 20, 
                                     color = "white", 
                                     family = "Lato", 
                                     face = "bold", 
@@ -46,7 +45,7 @@ plot <- ggplot() +
           legend.text = element_text(color = "white", 
                                      family = "Lato"),    
           plot.margin = margin(10, 10, 10, 0),
-          legend.position = c(0.25, 0.5),
+          legend.position = c(1.2, 0.5),
           plot.background = element_rect(fill = "gray10", color = NA)
         )
 # Below sets the background to be completely gray; otherwise it isn't.

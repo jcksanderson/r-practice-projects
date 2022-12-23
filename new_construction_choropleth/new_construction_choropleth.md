@@ -4,22 +4,6 @@ R Notebook
 ``` r
 library(readr)
 library(ggplot2)
-library(broom)
-library(geojsonio)
-```
-
-    ## Registered S3 method overwritten by 'geojsonsf':
-    ##   method        from   
-    ##   print.geojson geojson
-
-    ## 
-    ## Attaching package: 'geojsonio'
-
-    ## The following object is masked from 'package:base':
-    ## 
-    ##     pretty
-
-``` r
 library(dplyr)
 ```
 
@@ -67,7 +51,7 @@ plot <- ggplot() +
           name = "Permits Issued"
         ) +
         theme(
-          plot.title = element_text(size = 25, 
+          plot.title = element_text(size = 20, 
                                     color = "white", 
                                     family = "Lato", 
                                     face = "bold", 
@@ -83,7 +67,7 @@ plot <- ggplot() +
           legend.text = element_text(color = "white", 
                                      family = "Lato"),    
           plot.margin = margin(10, 10, 10, 0),
-          legend.position = c(0.25, 0.5),
+          legend.position = c(1.2, 0.5),
           plot.background = element_rect(fill = "gray10", color = NA)
         )
 # Below sets the background to be completely gray; otherwise it isn't.
@@ -93,3 +77,4 @@ print(plot, newpage = FALSE)
 ```
 
 ![](new_construction_choropleth_files/figure-gfm/chicago_choropleth-1.png)<!-- -->
+Hi!
