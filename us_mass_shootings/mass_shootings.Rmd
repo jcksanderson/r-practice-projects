@@ -1,0 +1,45 @@
+---
+title: "mass_shootings"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r shootings, echo=FALSE}
+library(dplyr)
+library(plotly)
+library(readr)
+
+shootings <-  read_csv("us_mass_shootings/mass_shooting.csv") %>% 
+  select(-"S#", -"Summary")
+
+geo_properties <- list(
+  scope = "usa",
+  projection = list(type = "albers usa"),
+  showland = TRUE,
+  showsubunits = FALSE,
+  landcolor = "#202020",
+  showlakes = TRUE,
+  lakecolor = "505050",
+  bgcolor = toRGB("black")
+)
+
+plot_title <- list(
+  text = "US Mass Shootings, 1966-2017",
+  font = list(family = "Lato", size = 50, color = toRGB("white")),
+  y = 0.95
+)
+
+shootings_map <- plot_geo(shootings,
+                          lat = ~Latitude,
+                          lon = ~Longitude,
+                          marker = list(size = 5, color = "#d92104", opacity = 0.35)) %>% 
+  add_markers(hoverinfo = "none") %>% 
+  config(displayModeBar = FALSE) %>% 
+  layout(geo = geo_properties,
+         title = plot_title,
+         paper_bgcolor = toRGB("black"))
+shootings_map
+```
