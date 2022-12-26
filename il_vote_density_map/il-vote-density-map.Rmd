@@ -1,0 +1,34 @@
+---
+title: "illinois vote density map"
+output: github_document
+---
+```{r}
+library(tidyverse)
+library(sf)
+theme_set(theme_bw())
+
+# imports precincts shapefile 
+IL_precincts <- st_read("il_vote_density_map/il_2020/il_2020.shp")
+# turns into dataframe
+IL_precincts_map <- fortify(IL_precincts, region = "NAME20")
+# draws test map
+ggplot(data = IL_precincts_map) +
+  geom_sf()
+
+# imports voting data
+IL_voting <- read_csv("il_vote_density_map/il_pres_ge_precinct.csv")
+IL_voting_omit <- na.omit(IL_voting)
+
+# gets voting totals
+IL_voting_totals <- IL_voting_omit %>% 
+  mutate(total = `JOSEPH R_ BIDEN` + `DONALD J_ TRUMP`) %>% 
+  mutate(blue_ratio = `JOSEPH R_ BIDEN` / total)
+
+# hopefully makes the precinct names the same...
+IL_precincts_map_fixed <- IL_precincts_map
+IL_precincts_map_fixed$NAME20 <- toupper(IL_precincts_map_fixed$NAME20)
+
+IL_combined <- left_join(IL_precincts_map_fixed, IL_voting_totals, by = c("NAME20", "PrecinctName"))
+
+```
+
