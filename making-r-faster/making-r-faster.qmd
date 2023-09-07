@@ -1,0 +1,389 @@
+---
+title: "Making R Faster"
+format: html
+editor: visual
+---
+
+```{r}
+#| label: setup
+# remotes::install_github("josiahparry/pathattr")
+library(pathattr)
+library(bench)
+library(tidytable)
+library(data.table)
+library(dtplyr)
+```
+
+```{r}
+#| label: Original Approach
+
+path_data <- path10k[1:1000,]
+
+removal_effects_table <- dplyr::tibble(
+  channel_name = c("fb","tiktok","gda","yt","gs","rtl","blog"),
+  removal_effects_conversion = c(.2,.1,.3,.1,.6,.05,.09)
+)
+
+attribute_path <- function(path_str, date_str, outcome, value, retbl) {
+  #break the path_str and date_str into vectors of touch points and dates
+  touches <- stringr::str_split_1(path_str, ">")
+  dates <- stringr::str_split_1(date_str, ">")
+  #remove dates and touches where touches is an empty
+  dates <- dates[touches != '']
+  touches <- touches[touches != '']
+
+  # create an output dataframe that shows the fraction of
+  # a lead due to each touch/channel_name by
+  # 1 getting the removal_effects_conversion 
+  #   (renamed to re) value for each touch
+  # 2 normalizing re for reach touchpoint by dividing by the 
+  #   sum(re) for all touchpoints in the path_str
+  # 3 multiplying outcome and value by the renormalized re
+  tidyr::tibble(channel_name = touches) |>
+    dplyr::left_join(
+      retbl |> dplyr::select(channel_name, removal_effects_conversion),
+      "channel_name"
+    ) |> 
+    dplyr::rename(
+      re = removal_effects_conversion
+    ) |> 
+    dplyr::mutate(
+      conversion = outcome * re / sum(re, na.rm = TRUE),
+      value = value * re / sum(re, na.rm = TRUE),
+      date = dates
+    )
+}
+
+tidytable::bind_rows(
+    purrr::pmap(
+      list(path_str = path_data$path, 
+           date_str = path_data$dates,
+           outcome = path_data$leads, 
+           value = path_data$value),
+      attribute_path,
+      # this is passed as additional, "default" argument
+      removal_effects_table,
+      .progress = TRUE
+    )
+  )
+```
+
+
+```{r}
+#| label: Simplified Original
+
+touches <- strsplit(path_data$path, ">", fixed = TRUE)
+dates <- strsplit(path_data$dates, ">", fixed = TRUE)
+
+tidyr::tibble(channel_name = touches[[1]]) %>% 
+  dplyr::left_join(
+      removal_effects_table,
+      "channel_name"
+  ) %>% 
+  dplyr::rename(
+    re = removal_effects_conversion
+  ) %>% 
+  dplyr::mutate(
+      conversion = path_data$leads[[1]] * re / sum(re, na.rm = TRUE),
+      value = path_data$value[[1]] * re / sum(re, na.rm = TRUE),
+      date = dates[[1]]
+  )
+```
+
+
+```{r}
+#| label: Vectorized Approach
+
+# vectorized splitting of string based on a fixed character
+touches <- strsplit(path_data$path, ">", fixed = TRUE)
+dates <- strsplit(path_data$dates, ">", fixed = TRUE)
+
+# creating lookup vector for fast subsetting
+re_vec <- setNames(
+    c(.2,.1,.3,.1,.6,.05,.09),
+    c("fb","tiktok","gda","yt","gs","rtl","blog")
+  )
+
+# creating grouping vector 
+# done by repeating the index of each list element by the length of items in the element
+groups <- rep.int(seq_along(touches), lengths(touches))
+
+# can then create outcome and value vectors 
+# these repeat the original dataframe's (path_data) value by the number of times each group number appears
+# num. of times each group appears = number of paths in og df
+outcome <- path_data$leads[groups]
+value <- path_data$value[groups]
+
+# we then create touches and dates vectors by unlisting
+touches_vec <- unlist(touches)
+dates_vec <- unlist(dates)
+
+# then put it all in a tidytable to perform calculations on the *entire* dataset
+# make sure to group by the groups
+tidytable::tidytable(
+    channel_name = touches_vec,
+    re = re_vec[touches_vec],
+    group = groups,
+    outcome = outcome,
+    value = value,
+    date = dates_vec
+  ) %>% 
+  tidytable::mutate(
+      conversion = outcome * re / sum(re, na.rm = TRUE),
+      value = value * re / sum(re, na.rm = TRUE),
+      .by = group
+  ) %>% 
+  tidytable::select(channel_name, re, conversion, value, date)
+```
+
+
+```{r}
+#| label: Vectorized Function
+
+attribute_path_vec <- function(path_str, date_str, outcome, value, re_vec) {
+  touches <- strsplit(path_str, ">", fixed = TRUE)
+  dates <- strsplit(date_str, ">", fixed = TRUE)
+  
+  groups <- rep.int(seq_along(touches), lengths(touches))
+  
+  outcome <- outcome[groups]
+  value <- value[groups]
+  
+  touches_vec <- unlist(touches)
+  dates_vec <- unlist(dates)
+  
+  my_df <- tidytable::tidytable(
+      channel_name = touches_vec,
+      re = re_vec[touches_vec],
+      group = groups,
+      outcome = outcome,
+      value = value,
+      date = dates_vec
+    ) %>% 
+    tidytable::mutate(
+      re_tot = sum(re, na.rm = TRUE),
+      .by = group
+    ) %>%
+    tidytable::mutate(
+      conversion = outcome * re / re_tot,
+      value = value * re / re_tot
+    ) %>%
+    tidytable::select(channel_name, re, conversion, value, date) %>%
+      as.data.frame()
+  
+  return(my_df)
+}
+
+```
+
+```{r}
+#| label: Original Speed Testing
+
+re_vec <- setNames(
+    c(.2,.1,.3,.1,.6,.05,.09),
+    c("fb","tiktok","gda","yt","gs","rtl","blog")
+  )
+
+speed_results <- bench::mark(
+  original = tidytable::bind_rows(
+    purrr::pmap(
+      list(path_str = path_data$path, 
+           date_str = path_data$dates,
+           outcome = path_data$leads, 
+           value = path_data$value),
+      attribute_path,
+      # this is passed as additional, "default" argument
+      removal_effects_table,
+      .progress = TRUE
+    )
+  ),
+  vectorized = attribute_path_vec(
+                 path_str = path_data$path, 
+                 date_str = path_data$dates,
+                 outcome = path_data$leads, 
+                 value = path_data$value,
+                 re_vec = re_vec
+               )
+)
+```
+
+```{r}
+#| label: Comparizing Vectorizing Speeds
+
+re_vec <- setNames(
+    c(.2,.1,.3,.1,.6,.05,.09),
+    c("fb","tiktok","gda","yt","gs","rtl","blog")
+  )
+
+touches <- strsplit(path_data$path, ">", fixed = TRUE)
+dates <- strsplit(path_data$dates, ">", fixed = TRUE)
+
+groups <- rep.int(seq_along(touches), lengths(touches))
+
+outcome <- path_data$leads[groups]
+value <- path_data$value[groups]
+
+touches <- unlist(touches)
+dates <- unlist(dates)
+re <- re_vec[touches_vec]
+
+bench::mark(
+  tim_way = {
+    touches <- strsplit(path_data$path, ">", fixed = TRUE)
+    lt <- lengths(touches)
+    groups <- rep.int(seq_along(touches), lt)
+    outcome <- rep.int(path_data$leads, lt)
+    value <- rep.int(path_data$value, lt)
+    touches <- unlist(touches)
+    dates <- unlist(strsplit(path_data$dates, ">", fixed = TRUE))
+    not_empty <- touches != ''
+    dates <- dates[not_empty]
+    touches <- touches[not_empty]
+    re <- lu[touches]
+
+    # DT <- data.table(
+    #   channel_name = touches,
+    #   outcome = outcome,
+    #   date = dates,
+    #   re,
+    #   value,
+    #   groups
+    # )
+    # DT[, re_tot := sum(re, na.rm = TRUE), by = groups]
+    # DT[, `:=`(conversion = outcome * re / re_tot, value = value * re / re_tot)]
+    # as.data.frame(DT[,.(channel_name, re, conversion, value, date)])
+  },
+  
+  my_way = {
+    touches <- strsplit(path_data$path, ">", fixed = TRUE)
+    dates <- strsplit(path_data$dates, ">", fixed = TRUE)
+
+    groups <- rep.int(seq_along(touches), lengths(touches))
+
+    outcome <- path_data$leads[groups]
+    value <- path_data$value[groups]
+    
+    touches <- unlist(touches)
+    dates <- unlist(dates)
+
+    re <- re_vec[touches_vec]
+
+    # tidytable(
+    #   channel_name = touches,
+    #   re = re,
+    #   group = groups,
+    #   outcome = outcome,
+    #   value = value,
+    #   date = dates
+    # ) %>%
+    # tidytable::mutate(
+    #   re_tot = sum(re, na.rm = TRUE),
+    #   .by = group
+    # ) %>% 
+    # tidytable::mutate(
+    #   conversion = outcome * re / re_tot,
+    #   value = value * re / re_tot
+    # ) %>%
+    # tidytable::select(channel_name, re, conversion, value, date) %>%
+    #   as.data.frame()
+  }
+)
+
+```
+
+```{r}
+#| label: Comparing All Speeds
+
+re_vec <- setNames(
+    c(.2,.1,.3,.1,.6,.05,.09),
+    c("fb","tiktok","gda","yt","gs","rtl","blog")
+  )
+
+bench::mark(
+  tim_way = {
+    touches <- strsplit(path_data$path, ">", fixed = TRUE)
+    lt <- lengths(touches)
+    groups <- rep.int(seq_along(touches), lt)
+    outcome <- rep.int(path_data$leads, lt)
+    value <- rep.int(path_data$value, lt)
+    touches <- unlist(touches)
+    dates <- unlist(strsplit(path_data$dates, ">", fixed = TRUE))
+    not_empty <- touches != ''
+    dates <- dates[not_empty]
+    touches <- touches[not_empty]
+    re <- lu[touches]
+
+    DT <- data.table(
+      channel_name = touches,
+      outcome = outcome,
+      date = dates,
+      re,
+      value,
+      groups
+    )
+    DT[, re_tot := sum(re, na.rm = TRUE), by = groups]
+    DT[, `:=`(conversion = outcome * re / re_tot, value = value * re / re_tot)]
+    as.data.frame(DT[,.(channel_name, re, conversion, value, date)])
+  },
+  
+  my_way = {
+    touches <- strsplit(path_data$path, ">", fixed = TRUE)
+    dates <- strsplit(path_data$dates, ">", fixed = TRUE)
+
+    groups <- rep.int(seq_along(touches), lengths(touches))
+
+    outcome <- path_data$leads[groups]
+    value <- path_data$value[groups]
+
+    touches <- unlist(touches)
+    dates <- unlist(dates)
+    re <- re_vec[touches_vec]
+
+    tidytable(
+      channel_name = touches,
+      re = re,
+      group = groups,
+      outcome = outcome,
+      value = value,
+      date = dates
+    ) %>%
+    tidytable::mutate(
+      re_tot = sum(re, na.rm = TRUE),
+      .by = group
+    ) %>%
+    tidytable::mutate(
+      conversion = outcome * re / re_tot,
+      value = value * re / re_tot
+    ) %>%
+    tidytable::select(channel_name, re, conversion, value, date) %>%
+      as.data.frame()
+  },
+
+  fastest = {
+    touches <- strsplit(path_data$path, ">", fixed = TRUE)
+    dates <- strsplit(path_data$dates, ">", fixed = TRUE)
+
+    groups <- rep.int(seq_along(touches), lengths(touches))
+
+    outcome <- path_data$leads[groups]
+    value <- path_data$value[groups]
+
+    touches_vec <- unlist(touches)
+    dates_vec <- unlist(dates)
+    re <- re_vec[touches_vec]
+
+    DT <- data.table(
+      channel_name = touches_vec,
+      outcome = outcome,
+      date = dates_vec,
+      re = re,
+      value,
+      groups
+    )
+    DT[, re_tot := sum(re, na.rm = TRUE), by = groups]
+    DT[, `:=`(conversion = outcome * re / re_tot, value = value * re / re_tot)]
+    as.data.frame(DT[,.(channel_name, re, conversion, value, date)])
+  }
+)
+```
+
