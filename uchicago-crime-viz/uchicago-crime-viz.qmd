@@ -1,0 +1,99 @@
+---
+title: "UChicago Crime Viz"
+format: html
+editor: visual
+---
+
+```{r}
+#| label: setup
+#| message: false
+#| warning: false
+#| results: false
+library(tidyverse)
+library(rvest)
+library(ggmap)
+library(tidygeocoder)
+library(sf)
+library(here)
+```
+
+```{r}
+#| label: Import Data
+
+# 37 total webpages
+# starts at offset = 0
+# ends at offset = 180
+
+offset_sequence = seq(from = 0, to = 37)
+link_vec = rep(c(0), 37)
+
+for (offset in offset_sequence) {
+  link_vec[offset] = str_glue("https://incidentreports.uchicago.edu/incidentReportArchive.php?startDate=1696136400&endDate=1698728400&offset={(offset - 1)* 5}")
+}
+
+crime_list <- rep(list(data.frame()), 37)
+
+for (i in 1:37) {
+  crime_list[[i]] <- read_html(link_vec[i]) %>% 
+    html_element("table") %>%
+    html_table()
+}
+
+crime_df <- bind_rows(crime_list)
+```
+
+```{r}
+#| label: Basic Filtering
+clean_crime_df <- crime_df %>% 
+  filter(str_detect(Incident, "Theft|Armed Robbery")) %>% 
+  mutate(
+    Location = str_replace_all(Location, " \\(.*\\)", ""),
+    Location = str_replace(
+      Location, # it's not listed as an address 
+      "Harper between 53rd & 54th", # so i gave it one
+      "5330 S Harper Ave"
+    ),
+    Location = str_replace(
+      Location,
+      "Harper between 54th & 55th",
+      "5419 S Harper Ave"
+    )
+  ) %>% 
+  mutate(Location = str_glue("{Location}, Chicago, IL"))
+
+
+crime_lat_longs <- clean_crime_df %>%
+  geocode(Location, method = 'census', lat = lat , long = long)
+
+crime_sf <- st_as_sf(crime_lat_longs, coords = c("long", "lat"))
+```
+
+```{r}
+#| label: Preliminary Mapping
+
+chicago <- read_sf(
+  here(
+    "chicago-gun-violence", 
+    "SHP_chicago-communities", 
+    "geo_export_e07d67fa-91ce-4d30-9da3-eb903021731c.shp"
+    )
+  )
+
+st_crs(chicago) <- st_crs(crime_sf)
+
+bounding_box <- st_bbox(crime_sf)
+
+ggplot(crime_sf) + 
+  geom_sf() +
+  geom_sf(
+    data = chicago,
+    color = "black",
+    fill = NA
+  ) +
+  coord_sf(
+    xlim = c(bounding_box['xmin'] - 0.02, bounding_box['xmax'] + 0.02),
+    ylim = c(bounding_box['ymin'] - 0.02, bounding_box['ymax'] + 0.02),
+  )
+
+
+```
